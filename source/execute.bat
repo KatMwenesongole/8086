@@ -1,2 +1,2 @@
 @echo off
-d:/build/8086.exe
+p:/8086/build/8086.exe

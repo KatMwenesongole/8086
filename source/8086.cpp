@@ -73,251 +73,61 @@ windows_readfile (char* filename)
 }
 
 // OPCODES
-#define MOV_REGMEM_REG  34 // 1 0 0 0 1 0  - Register/Memory to/from Register
-#define ADD_REGMEM_REG   0 // 0 0 0 0 0 0  - Register/Memory with Register to either
-
-#define MOV_IMMED_REGMEM  49 // 1 1 0 0 0 1  - Immediate to Register/Memory
-#define ADD_IMMED_REGMEM  32 // 1 0 0 0 0 0  - Immediate to Register/Memory (0 0 0)
-
-#define MOV_IMMED_REG     11 //     1 0 1 1  - Immediate to Register
-
-#define MOV_MEM_ACCUM     40 // 1 0 1 0 0 0  - Memory to Accumulator
-
-#define MOV (152 + 0)
-#define ADD (152 + 1)
-
-#define IMMED_REG     (152 + 2)
-#define IMMED_REGMEM  (152 + 3)
-
-#define MM   0 // 0 0 (memory mode no disp*)
-#define MM8  1 // 0 1 (memory mode disp:  8)
-#define MM16 2 // 1 0 (memory mode disp: 16)
-#define RM   3 // 1 1 (register mode)
-
-#define DIRECT_ADDR 6 // 1 1 0 (direct address)
-
-char* REG_BYTE[] =
-{
-    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"
-};
-char* REG_WORD[] =
-{
-    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di"
-};
-
-char* EAC[] = // Effective Address Calculation
-{
-    "bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"  
-};
-
-// TWO's Complement (-128 -> +127)
 //
-// when interpreting a binary number as negative:
+// ...
+
+
+// (1) 8086_single_register_mov - COMPLETE
+// (2) 8086_many_register_mov   - COMPLETE
 //
-// .highest bit is always one 
-//
-// .the seven other bits are looked at for the value
-//     .subtract one
-//     .invert bits
-//
-// e.g
-// 1 0 0 0 1 0 0 1 
-// 
-// .highest bit is always one
-//  |1| 0001001
-// .subtract one
-//  |1| 0001000
-// .invert bits
-//  |1| 1110111
-//
-//  = 64+32+16+4+2+1
-//  = (-)119
-//
+
+
+const char* REG_NAME[] = { "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh",
+                           "ax", "cx", "dx", "bx", "sp", "bp", "si", "di" };
+#define WORD_OFFSET 8
+
+#define MOV_REGMEM_REG 34
+
+#define MM   0
+#define MM8  1
+#define MM16 2
+#define RM   3
 
 int WinMain(HINSTANCE instance,
 	    HINSTANCE prev_instance,
 	    LPSTR     cmd_line,
 	    int       cmd_show)
 {
-    windows_file file = windows_readfile("d:/source/8086_add_sub_cmp_jnz");
+    windows_file file = windows_readfile("p:/8086/source/8086_many_register_mov");
     if(file.data)
     {
 	int size = 0;
 	while(size < file.size)
 	{
 	    unsigned char* instruction = ((unsigned char*)file.data) + size;
-	    unsigned int   instruction_size = 0; // bytes
+	    unsigned int instruction_size = 2;
 	    
-	    unsigned char  byte0 = *instruction;
-	    unsigned char  byte1 = *(instruction + 1);
-	    unsigned char  byte2 = *(instruction + 2); // disp-lo
-	    unsigned char  byte3 = *(instruction + 3); // disp-hi
-	    unsigned char  byte4 = *(instruction + 4); // data-lo
-	    unsigned char  byte5 = *(instruction + 5); // data-hi
+	    // [ 0 0 0 0 0 0 ] opcode [ 0 ] d [ 0 ] w
 	    
-	    unsigned char opcode = byte0 >> 2; // six bits
+	    unsigned char opcode = (*instruction) >> 2;   
+	    unsigned char d = (unsigned char)(((unsigned char)((*instruction) << 6)) >> 7); // is src / dest in REG                   
+	    unsigned char w = (unsigned char)(((unsigned char)((*instruction) << 7)) >> 7); // is it byte / word
 
-	    char dest[128] = { };
-	    char src [128] = { };
+	    // [ 0 0 ] mod [ 0 0 0 ] reg [ 0 0 0 ] rm
 
-	    // d = 1
-	    // destination is in REG (source in R/M)
-	    // d = 0
-	    // source is in REG (destination in R/M)
-
-	    // w = 0 (byte)
-	    // w = 1 (word)
-
-	    unsigned char d = ((unsigned char)(byte0 >> 1)) << 7; // 1 bit;
-	    unsigned char w = byte0 << 7;                         // 1 bit;
-
-	    unsigned char mod = byte1 >> 6;                                                 // 2 bits
-	    unsigned char reg = ((unsigned char)(((unsigned char)(byte1 >> 3)) << 5)) >> 5; // 3 bits
-	    unsigned char rm  = ((unsigned char)(byte1 << 5)) >> 5;                         // 3 bits
-
-	    unsigned char instruction_type = 0;
-	    unsigned char      opcode_type = 0;
+	    unsigned char mod = *(instruction + 1) >> 6; // memory mode.
+	    unsigned char reg = (unsigned char)(((unsigned char)((*(instruction + 1)) << 2)) >> 5); // source or destination?
+	    unsigned char rm  = (unsigned char)(((unsigned char)((*(instruction + 1)) << 5)) >> 5);  // source or destination?
 	    
-	    if(opcode == MOV_IMMED_REGMEM || opcode == ADD_IMMED_REGMEM)
+
+	    if(opcode == MOV_REGMEM_REG)
 	    {
-		instruction_type = IMMED_REGMEM;
-	    }
+		int offset = (w) ? WORD_OFFSET : 0;
 
-	    if(mod == RM) 
-	    {
-		instruction_size = 2;
+		const char* dest = (d) ? REG_NAME[reg + offset] : REG_NAME[rm  + offset];
+		const char* src  = (d) ? REG_NAME[rm  + offset] : REG_NAME[reg + offset];
 
-		if(w)
-		{
-		    sprintf(dest, "%s", REG_WORD[reg]); // dest = REG_WORD[reg]
-		    sprintf(src , "%s", REG_WORD[rm]);  // src  = REG_WORD[rm]
-		}
-		else
-		{
-		    sprintf(dest, "%s", REG_BYTE[reg]); // dest = REG_BYTE[reg]
-		    sprintf(src , "%s", REG_BYTE[rm]);  // src  = REG_BYTE[rm]
-		}
-	    }
-	    else
-	    {
-		// note: use EA calculation. (assuming d = 1)
-		//       must be word as EA calculation is word
-
-		sprintf(dest, "%s", REG_WORD[reg]); // dest = REG_WORD[reg]
-		sprintf(src , "%s", EAC[rm]);       // src  = EAC[rm]
-		    
-		if     (mod == MM)
-		{
-		    instruction_size = 2; 
-		    
-		    if(rm == DIRECT_ADDR) 
-		    {
-			instruction_size = 4;
-			
-			unsigned short direct_address = byte2 | ((unsigned short)(byte3 << 8));
-			sprintf(src, "[%i]", direct_address); // src = [direct_address]
-		    }
-		    else
-		    {
-			sprintf(src, "[%s]", EAC[rm]); // src = [EAC[rm]]
-		    }
-		}
-		else if(mod == MM8 || mod == MM16) // note: displacement
-		{	
-		    instruction_size = 3;
-
-		    unsigned short disp = byte2;
-		    if(mod == MM16)
-		    {
-			instruction_size += 1;
-			disp |= ((unsigned short)(byte3 << 8));
-		    }
-		    sprintf(src, "[%s + %i]", EAC[rm], disp); // src = [EAC[rm] + disp]
-		}
-	    }
-	    
-	    if     (instruction_type == IMMED_REGMEM)
-	    {
-		// d = s (ADD)
-		
-		instruction_size += 1;
-			
-		unsigned char* immediate_byte = instruction + 2;
-		if     (mod == MM8)  immediate_byte += 1;
-		else if(mod == MM16) immediate_byte += 2;
-
-		unsigned short immediate = *immediate_byte;
-		if(!d && w)
-		{
-		    instruction_size += 1;
-		    immediate |= (*(immediate_byte + 1)) << 8;
-		}
-		sprintf(dest, "%i", immediate); // dest = immediate
-
-		SWAP_ARRAY(char, src, dest);
-	    }
-
-	    // 
-	    // DETERMINE OPCODE
-	    //
-
-	    if                          (opcode == MOV_MEM_ACCUM) 
-	    {
-		opcode_type = MOV;
-		
-		instruction_size = 2;
-		
-		unsigned short address = byte1;
-		sprintf(src, "%s", REG_BYTE[0]); // src = REG_BYTE[0]
-		if(w)
-		{
-		    instruction_size += 1;
-		    address |= byte2 << 8;
-		    sprintf(src, "%s", REG_WORD[0]); // src = REG_WORD[0]
-		}
-		sprintf(dest, "[%i]", address); // dest = [address]
-	    }
-	    else if((unsigned char)(byte0 >> 4) == MOV_IMMED_REG)
-	    {
-		opcode_type = MOV;
-		
-		instruction_size = 2;
-		
-		w   = ((unsigned char)(byte0 >> 3)) << 7; // 1 bit
-		reg = ((unsigned char)(byte0 << 5)) >> 5; // 3 bits
-
-		sprintf(dest, "%s", REG_BYTE[reg]); // dest = REG_BYTE[reg]
-		unsigned short immediate = byte1;
-		if(w)
-		{
-		    instruction_size += 1;
-		    immediate |= byte2 << 8;
-		    sprintf(dest, "%s", REG_WORD[reg]); // dest = REG_WORD[reg]
-		}
-		sprintf(src, "%i", immediate); // src = immediate
-	    }
-	    else if(opcode == MOV_IMMED_REGMEM || opcode == MOV_REGMEM_REG)
-	    {
-		opcode_type = MOV;	
-	    }
-
-	    else if(opcode == ADD_REGMEM_REG || opcode == ADD_IMMED_REGMEM)
-	    {
-		opcode_type = ADD;	
-	    }
-
-	    if(!d)
-	    {
-		SWAP_ARRAY(char, dest, src);
-	    }
-
-	    if     (opcode_type == MOV)
-	    {
 		printf("mov %s, %s\n", dest, src);
-	    }
-	    else if(opcode_type == ADD)
-	    {
-		printf("add %s, %s\n", dest, src);
 	    }
 	    
 	    size += instruction_size;
@@ -325,3 +135,4 @@ int WinMain(HINSTANCE instance,
     }
     return(0);
 }
+

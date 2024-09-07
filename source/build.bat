@@ -5,9 +5,9 @@ SET definitions=/D _MBCS /D _CRT_SECURE_NO_WARNINGS
 SET libraries=user32.lib 
 
 cd ..
-IF NOT EXIST d:/build mkdir build
+IF NOT EXIST p:/8086/build mkdir build
 cd build
-cl %compiler% %definitions% d:/source/8086.cpp %libraries% /I d:/ /I d:/source /link %linker%
+cl %compiler% %definitions% p:/8086/source/8086.cpp %libraries% /I p:/8086/source /link %linker%
 cd ..
 
 
