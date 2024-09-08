@@ -72,63 +72,145 @@ windows_readfile (char* filename)
     return(file);
 }
 
-// OPCODES
-//
-// ...
-
-
 // (1) 8086_single_register_mov - COMPLETE
 // (2) 8086_many_register_mov   - COMPLETE
-//
+// (3) 8086_more_movs           - COMPLETE
 
+const char* REG_NAME[] =
+{
+    "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh",
+    "ax", "cx", "dx", "bx", "sp", "bp", "si", "di"
+};
+const char* EA[] =
+{
+    "bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"
+};
 
-const char* REG_NAME[] = { "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh",
-                           "ax", "cx", "dx", "bx", "sp", "bp", "si", "di" };
 #define WORD_OFFSET 8
 
 #define MOV_REGMEM_REG 34
+#define MOV_IMM_REG    11
 
 #define MM   0
 #define MM8  1
 #define MM16 2
 #define RM   3
 
+#define DA   6
+
 int WinMain(HINSTANCE instance,
 	    HINSTANCE prev_instance,
 	    LPSTR     cmd_line,
 	    int       cmd_show)
 {
-    windows_file file = windows_readfile("p:/8086/source/8086_many_register_mov");
+    windows_file file = windows_readfile("p:/8086/source/8086_more_movs");
     if(file.data)
     {
 	int size = 0;
 	while(size < file.size)
 	{
 	    unsigned char* instruction = ((unsigned char*)file.data) + size;
-	    unsigned int instruction_size = 2;
-	    
-	    // [ 0 0 0 0 0 0 ] opcode [ 0 ] d [ 0 ] w
-	    
-	    unsigned char opcode = (*instruction) >> 2;   
-	    unsigned char d = (unsigned char)(((unsigned char)((*instruction) << 6)) >> 7); // is src / dest in REG                   
-	    unsigned char w = (unsigned char)(((unsigned char)((*instruction) << 7)) >> 7); // is it byte / word
+	    unsigned int   instruction_size = 2;
 
-	    // [ 0 0 ] mod [ 0 0 0 ] reg [ 0 0 0 ] rm
-
-	    unsigned char mod = *(instruction + 1) >> 6; // memory mode.
-	    unsigned char reg = (unsigned char)(((unsigned char)((*(instruction + 1)) << 2)) >> 5); // source or destination?
-	    unsigned char rm  = (unsigned char)(((unsigned char)((*(instruction + 1)) << 5)) >> 5);  // source or destination?
+	    unsigned char opcode = ((unsigned char)(*instruction) >> 2);
 	    
+	    unsigned char d = 0;
+	    unsigned char w = 0;
+	    unsigned char reg = 0;
 
-	    if(opcode == MOV_REGMEM_REG)
+	    char destination[32] = {};
+	    char source     [32] = {};
+
+	    char* dest = destination;
+	    char* src  = source;
+	    
+	    if((unsigned char)((*instruction) >> 4) == MOV_IMM_REG) // immediate-to-register.
 	    {
+		// [ 0 0 0 0 ] opcode [ 0 ] w [ 0 0 0 ] reg 
+		
+		w = (unsigned char)(((unsigned char)((*instruction) << 4)) >> 7); // 8 / 16.
+		reg = (unsigned char)(((unsigned char)((*instruction) << 5)) >> 5); // register.
+
 		int offset = (w) ? WORD_OFFSET : 0;
+		if(w)
+		{
+		    short data0 = (*(instruction + 1) << 8) >> 8;
+		    short data1 = (*(instruction + 2) << 8);
 
-		const char* dest = (d) ? REG_NAME[reg + offset] : REG_NAME[rm  + offset];
-		const char* src  = (d) ? REG_NAME[rm  + offset] : REG_NAME[reg + offset];
+		    sprintf(src, "%i", (data1 | data0));
 
-		printf("mov %s, %s\n", dest, src);
+		    instruction_size = 3;
+		}
+		else
+		{
+		    char data = (char)(*(instruction + 1));
+		    sprintf(src, "%i", data);
+		}
+
+		sprintf(dest, "%s", REG_NAME[reg + offset]);
 	    }
+	    else if(opcode == MOV_REGMEM_REG)                       // register-to-register.
+	    {
+		// [ 0 0 0 0 0 0 ] opcode [ 0 ] d [ 0 ] w
+		// [ 0 0 ] mod [ 0 0 0 ] reg [ 0 0 0 ] rm
+		
+		// [ 0 0 0 0 0 0 0 0 ] disp - lo
+		// [ 0 0 0 0 0 0 0 0 ] disp - hi
+		
+		d = (unsigned char)(((unsigned char)((*instruction) << 6)) >> 7); // source is in REG (0)? destination is in REG (1)?                   
+		w = (unsigned char)(((unsigned char)((*instruction) << 7)) >> 7); // 8 / 16.
+
+		unsigned char mod = *(instruction + 1) >> 6; // memory mode.
+		reg = (unsigned char)(((unsigned char)((*(instruction + 1)) << 2)) >> 5);                // source or destination?
+		unsigned char rm  = (unsigned char)(((unsigned char)((*(instruction + 1)) << 5)) >> 5);  // source or destination?
+
+		if     (mod == MM) // eac (no displacement). 
+		{
+		    // special case*
+		    if(rm == DA) // direct address (16 bit).
+		    {
+			short data0 = (*(instruction + 2) << 8) >> 8;
+			short data1 = (*(instruction + 3) << 8);
+			sprintf(src, "[%i]", (data1 | data0));
+			instruction_size = 4;
+		    }
+		    else
+		    {
+			sprintf(src, "[%s]", EA[rm]);
+			instruction_size = 2;
+		    }
+		}
+		else if(mod == MM8) // eac (8 bit displacement).
+		{
+		    char data = (char)(*(instruction + 2));
+		    sprintf(src, "[%s + %i]", EA[rm], data);
+
+		    instruction_size = 3; 
+		}
+		else if(mod == MM16) // eac (16 bit displacement).
+		{
+		    short data0 = (*(instruction + 2) << 8) >> 8;
+		    short data1 = (*(instruction + 3) << 8);
+		    
+		    sprintf(src, "[%s + %i]", EA[rm], (data1 | data0));
+		    
+		    instruction_size = 4;
+		}
+		else if(mod == RM) 
+		{    
+		    sprintf(src, "%s", (w) ? REG_NAME[rm  + WORD_OFFSET] : REG_NAME[rm]);
+		    instruction_size = 2;
+		}
+
+		sprintf(dest, "%s", (w) ? REG_NAME[reg + WORD_OFFSET] : REG_NAME[reg]);
+
+		if(!d)
+		{
+		    SWAP(char*, dest, src);
+		}
+	    }
+	    
+	    printf("mov %s, %s\n", dest, src);
 	    
 	    size += instruction_size;
 	}
